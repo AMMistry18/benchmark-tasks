@@ -18,5 +18,5 @@
   "reset_notes": "To unlock, lift the tile's near edge to about 25 deg and draw it back out of the groove. Set it back against the row: tongue resting on the laid row's locking bump with its far top edge 8 mm short of the seam, near edge on the batten, ends at y -0.290 and +0.310. Nothing is consumed; replace a tile whose tongue, bump or lip is chipped.",
   "fidelity": "The tile is rigid (real SPC flexes slightly), with one friction value for its vinyl and its foam pad. The click profile is an angle-in (Valinge 2G-type) section scaled to the 4 mm core, as convex collision pieces with 0.1-0.2 mm clearances: it locks by contact alone, nothing scripted, without the small snap of a real strip flexing. Short-edge profiles are not modelled (no end joint is made). The tile starts on the lip and a batten, as a person would set it: the robot cannot lift its far edge.",
   "scores": "Dream-1 run: 0.0; demo: 1.0",
-  "media": "M-FFV2NM"
+  "media": "M-6PJAMS"
 }
