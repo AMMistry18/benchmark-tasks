@@ -15,8 +15,9 @@ import numpy as np
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from yam_parts import Part, box, cyl
 from yam_joints import Hinge, Link, Mechanism
-from yam_arena.constants import FINGER_CLOSED, FINGER_OPEN
+from yam_arena.constants import FINGER_CLOSED, FINGER_OPEN, READY
 from yam_arena import demo as _motion
+from yam_arena import ik as _ik, station as _station
 from yam_arena.demo import Waypoint
 from yam_arena.task_file import TABLE_TOP
 
@@ -31,7 +32,7 @@ SCENE = "station"
 # Still means below the task's linear and angular speed limits for STILL_S seconds.
 # Evaluate every sticky condition and timer at the top of score() on every call,
 # before any early return, so interrupted conditions cannot retain elapsed time.
-RELEASE_CLEAR = 0.030
+RELEASE_CLEAR = 0.100
 STILL_S = 1.0
 TEST_GRIPPERS = None
 
@@ -141,7 +142,9 @@ def ever(key, cond):
 
 # ------------------------------------------------------------------ layout (metres, world frame)
 TOP = TABLE_TOP[SCENE]
-SUCCESS_HOLD_S = 1.0
+# The finished state (both hands withdrawn, every ticket seated and still) must last 14 s before the trial ends with
+# success: a ticket only lodged on the rolled edge, or one still settling, has time to slip out and fail.
+SUCCESS_HOLD_S = 14.0
 SCORE_OVER = "end"
 MM = 0.001
 
@@ -401,6 +404,16 @@ def _hide_clear_window():
         print("clear window not hidden:", exc, flush=True)
 
 
+class _Box:
+    def __init__(self, low, high):
+        self.low, self.high = np.asarray(low, float), np.asarray(high, float)
+
+
+# The ticket strip's envelope with its front shut (grip edge tip to back wall, 400 mm long, 42 mm high): a hand
+# resting on the grip edge or the strip is not released.
+STRIP_ENVELOPE = _Box((XF + XP - FRONT_T - LIP, -HALF, Z_DECK - STRIP_H), (XF, HALF, Z_DECK))
+
+
 def score(objects):
     _hide_clear_window()
     if DEBUG_TCP and _RUN["t"] is not None and _RUN["step"] % 10 == 0:
@@ -410,7 +423,7 @@ def score(objects):
                   flush=True)
     knocked = sticky("a can knocked over or off the shelf", any(can_down(objects[c.name]) for c in CANS))
     left_ok = seated(objects["ticket_left"], "left", objects)
-    clear = all(released(objects[n]) for n in ticket_names())
+    clear = all(released(objects[n]) for n in ticket_names()) and released(STRIP_ENVELOPE)
     quiet = at_rest(objects)
     done = clear and quiet
     seconds = held_for("tickets released and still", done)
@@ -501,19 +514,25 @@ INSERT_PLANE = XF + XB - 0.0045   # carried ticket 4.5 mm in front of the back w
 NEW_PINCH = 0.010                 # pads cover the top 10 mm of a new ticket
 STAND_TCP_Z = TOP + STAND_FLOOR + TICKET_H - NEW_PINCH + PAD
 INSERT_TIPS = 0.003               # release the new ticket with the pad tips 3 mm above the back wall
-PARK_L, PARK_R = (0.10, 0.25, TOP + 0.16), (0.10, -0.25, TOP + 0.16)
 OPEN_HALF = -0.015                # 30 mm between the pads
+# Parking: both arms go back to the pose they start in (the ready pose: grippers up beside the shelf, out of the top
+# camera's view of the strip), retracing their first move, and open their grippers there.
+_HOME = {arm: _ik.tcp_pose(np.array(READY, float), _station.BASES[arm]) for arm in ("left", "right")}
+PARK_L, PARK_R = tuple(_HOME["left"][0]), tuple(_HOME["right"][0])
+APPROACH_L = lip_press(0.0) + (0, 0, 0.04)                  # the arms' first waypoints
+APPROACH_R = np.array((0.12, -0.10, Z_DECK + 0.08))
+PARKED_HOLD = STILL_S + SUCCESS_HOLD_S - 1.5                # seconds parked, not scaled by DEMO_PACE
 
 
 def demo():
     plan = {"left": [], "right": []}
-    st = dict(l=np.array(lip_press(0.0)) + (0, 0, 0.04), lf=FINGER_CLOSED,
-              r=np.array((0.12, -0.10, Z_DECK + 0.08)), rf=FINGER_CLOSED)
+    st = dict(l=np.array(APPROACH_L), lf=FINGER_CLOSED, r=np.array(APPROACH_R), rf=FINGER_CLOSED)
 
     def add(dt, label, **change):
         for k, v in change.items():
             st[k] = np.asarray(v, float) if k in ("l", "r") else v
-        plan["left"].append(Waypoint(dt * DEMO_PACE, tuple(float(v) for v in st["l"]), float(st["lf"]), label, L_YAW))
+        plan["left"].append(Waypoint(dt * DEMO_PACE, tuple(float(v) for v in st["l"]), float(st["lf"]), label,
+                                     st.get("lr", L_YAW)))
         plan["right"].append(Waypoint(dt * DEMO_PACE, tuple(float(v) for v in st["r"]), float(st["rf"]), label,
                                       st.get("rr", R_YAW)))
 
@@ -574,8 +593,10 @@ def demo():
         add(1.2, "right: press it down to the floor", r=(SEAT_PLANE, y, Z_DECK - 0.003 + PAD))
         add(0.5, "right: hold")
         add(1.0, "right: rise", r=(SEAT_PLANE - 0.010, y, Z_DECK + 0.060))
-    add(1.5, "both: park", l=PARK_L, r=PARK_R, lf=FINGER_OPEN, rf=FINGER_OPEN)
-    add(3.5, "stillness tail")
+    add(1.0, "both: withdraw from the shelf edge", l=APPROACH_L, r=APPROACH_R)
+    add(2.0, "both: back to the ready pose, grippers open", l=PARK_L, r=PARK_R, lf=FINGER_OPEN, rf=FINGER_OPEN,
+        lr=GripOrientation(_HOME["left"][1]), rr=GripOrientation(_HOME["right"][1]))
+    add(PARKED_HOLD / DEMO_PACE, "parked while the tickets stay seated and still")
     return plan
 
 

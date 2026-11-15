@@ -26,9 +26,10 @@ inspect-robots run --embodiment yam_arena --policy yam_scripted \
 ```
 
 For a model trial replace `--policy yam_scripted` with `--policy dream`. `--scorer task_score` gives the score.
-One trial allows 4,800 control steps (240 s at 20 Hz). The scripted demo plan lasts about 121 s (2,415 steps)
-and reaches success, ending the trial, at step 2,132 (107 s); it uses only the authored layout and elapsed time
-and never reads object state. Wall-clock time per trial on one GPU: about 7 to 16 minutes. Seeds: the start layout is fixed (`object_jitter=0`; the tickets must not be shifted
+One trial allows 4,800 control steps (240 s at 20 Hz). The scripted demo plan lasts about 129 s (2,584 steps):
+the ticket work ends at about 113 s, both arms are back in their ready pose with grippers open by 116 s, and the
+trial ends with success at step 2,592 (130 s); it uses only the authored layout and elapsed time and never reads
+object state. Wall-clock time per trial on one GPU: about 8 to 22 minutes. Seeds: the start layout is fixed (`object_jitter=0`; the tickets must not be shifted
 sideways in their 1 mm channel and slots).
 
 ## Scene (metres; world x forward, y left, z up; table top z = 0.7475; arm bases at (0, +-0.305))
@@ -59,10 +60,12 @@ points to the aisle within 30 deg, its centre is within 15 mm (along the shelf) 
 clear front is within 2 deg of shut. For each of the middle and right cans: 0.25 when its old ticket is out of the
 strip and in the waste tray; a further 0.25 when its own new ticket is seated under it and its old ticket is no
 longer in the strip. A new ticket under the other can, or in front of an old one, earns nothing. Any credit needs
-the untouched left ticket still seated, both grippers released (centre point between the pads at least 30 mm from
-every ticket's bounding box) and every ticket, can and the clear front at rest (under 0.5 mm per control step), all
-held for 1 s. A can ever tipped more than 20 deg or dropped 20 mm gives a permanent 0. Success is 1.0 held a further
-1 s.
+the untouched left ticket still seated, both hands withdrawn (centre point between the pads at least 100 mm from
+every ticket's bounding box and from the strip's 400 x 9 x 42 mm envelope, so a hand resting on the grip edge does
+not count) and every ticket, can and the clear front at rest (under 0.5 mm per control step), all held for 1 s. A can
+ever tipped more than 20 deg or dropped 20 mm gives a permanent 0. Success is 1.0 held a further 14 s in a row (a
+ticket only lodged on the rolled edge has time to slip out), which ends the trial. The scripted demo finishes by
+taking both arms back to their ready pose, grippers open, and waits there.
 
 Real trial: a front photo with a ruler along the strip (centring and uprightness; a seated ticket's top is flush
 with the strip's back wall, checked with a straightedge), the clear front shut, the waste tray's contents; release,

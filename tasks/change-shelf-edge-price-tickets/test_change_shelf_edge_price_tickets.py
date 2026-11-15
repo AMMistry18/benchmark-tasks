@@ -100,7 +100,7 @@ GOAL_MODULE = {}
 
 def test_the_task_loads_with_its_loose_objects():
     assert TASK.scene == "station"
-    assert set(TASK.free_objects) == {'can_left', 'new_right', 'old_mid', 'can_mid', 'ticket_left', 'can_right', 'old_right', 'new_mid'}
+    assert set(TASK.free_objects) == {'new_right', 'can_left', 'old_mid', 'new_mid', 'can_right', 'old_right', 'can_mid', 'ticket_left'}
     assert TASK.docs and TASK.docs.strip()
 
 
@@ -149,6 +149,8 @@ CASES = [
     ('old right ticket dropped on the table beside the tray', GOAL_POSES, {
         'old_right': {'pos': (0.05, -0.17, 0.7477), 'tilt_deg': 90, 'tilt_axis': 'y'},
     }, 0.75, {}),
+    ('done with both arms parked in the ready pose, grippers open', GOAL_POSES, {
+    }, 1, {'TEST_GRIPPERS': "{'left': (np.array(PARK_L), 1.0), 'right': (np.array(PARK_R), 1.0)}"}),
     ('new tickets swapped (each under the other product)', GOAL_POSES, {
         'new_mid': {'pos': (0.1489, -0.14, 0.848)},
         'new_right': {'pos': (0.1489, -0.04, 0.848)},
@@ -182,6 +184,8 @@ CASES = [
     }, 0, {'TEST_GRIPPERS': "{'left': (np.array(PARK_L), 1.0), 'right': (np.array((SEAT_X, 0.0, Z_DECK + 0.010 + PAD)), 0.0)}"}),
     ('done, but the left fingertips still rest on the grip edge right above the new middle ticket', GOAL_POSES, {
     }, 0, {'TEST_GRIPPERS': "{'left': (np.array((XF - 0.010, 0.0, Z_DECK + 0.010)), 0.0), 'right': (np.array(PARK_R), 1.0)}"}),
+    ('done, but the left hand still hovers 60 mm above the strip, not yet withdrawn', GOAL_POSES, {
+    }, 0, {'TEST_GRIPPERS': "{'left': (np.array((XF - 0.010, 0.100, Z_DECK + 0.060)), 1.0), 'right': (np.array(PARK_R), 1.0)}"}),
     ('done, but a ticket is still moving', GOAL_POSES, {
         'new_right': {'pos': (0.1489, -0.14, 0.848), 'vel': (0.0, 0.0, 0.05)},
     }, 0, {}),
