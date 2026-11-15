@@ -3,8 +3,9 @@ detector (28 x 7.6 x 5 cm, 0.31 kg) on a 61.5 cm orange fibreglass hot stick (0.
 grey posts, 13 cm above the table, its sensing (top) end pointing to the robot's right. To the right of that end a
 black proof tester lies on a block, its metal end plate facing the detector 2 cm away and a red TEST button on
 top. Beyond the tester a bare aluminium bar (9.35 mm, 18 cm long) runs away from the robot on two posts.
-The detector has a white ON button (press: 3 s self-test, then on) and two red lights on its face; they flash
-while its top end is on the tester's end plate and TEST is held, unless the tester's battery is flat (odd seeds).
+The detector has a white ON/OFF button (press: 3 s self-test, then on; press again: off) and two red lights on
+its face; they flash while its top end is on the tester's end plate and TEST is held, unless the tester's battery
+is flat (odd seeds).
 Zero object jitter; 20 Hz.
 """
 import collections
@@ -254,7 +255,8 @@ def _new_live():
     return {"episode": -1, "seed_raw": None, "flat": False,
             "sim": {"step": 0, "on": False, "selftest": False, "selftest_frac": 0.0, "flashing": False,
                     "tester_led": False},
-            "rec": {}, "token": None, "on_t": None, "btn_down": False, "hist": collections.deque(), "logged": None,
+            "rec": {}, "token": None, "on_t": None, "btn_down": False, "in_hand": False, "hist": collections.deque(),
+            "logged": None,
             "obs": {"frames": collections.deque(maxlen=BLINK_STEPS + 1), "loc": None, "flash_seen": False,
                     "win": {}}}
 
@@ -373,6 +375,15 @@ def _still(det):
     return bool((arr.max(0) - arr.min(0)).max() <= STILL_MM)
 
 
+def _void(rec):
+    """A proof holds only while the detector stays on and in hand. Switching it off, or letting it leave both hands
+    (laid down, dropped, knocked off), voids every earlier proof and any bar touch not yet followed by a proof; a
+    finished prove-touch-prove test stands. The tester's battery is set at reset and never changes in a trial."""
+    rec["proved"] = False
+    if not rec["reproved"]:
+        rec["touched"] = False
+
+
 def _advance(objects):
     """The instruments' rules, advanced once per control step from button travel and poses only."""
     det, tst = objects["detector"], objects["tester"]
@@ -391,12 +402,22 @@ def _advance(objects):
     t = float(_RUN["t"])
     sim["step"] += 1
     q_on, q_test = float(det.joints["on_button"]), float(tst.joints["test_button"])
-    if not live["btn_down"] and q_on <= ON_PRESSED:           # a press of ON toggles the unit
+    switched_off = False
+    if not live["btn_down"] and q_on <= ON_PRESSED:           # a press of ON toggles the unit (PRX: ON/OFF)
         live["btn_down"] = True
         sim["on"] = not sim["on"]
-        live["on_t"] = t if sim["on"] else None
+        live["on_t"] = t if sim["on"] else None              # switched on again: a new 3 s self-test
+        switched_off = not sim["on"]
     elif live["btn_down"] and q_on >= ON_RELEASED:
         live["btn_down"] = False
+    in_hand = not released(det)
+    let_go = bool(live["in_hand"] and not in_hand)            # the detector just left both hands
+    live["in_hand"] = in_hand
+    if switched_off or let_go:
+        if LOG_EVENTS and (rec["proved"] or rec["touched"]):
+            print(f"[detector] t={t:.2f} {'switched off' if switched_off else 'left both hands'}: "
+                  f"earlier proofs void", flush=True)
+        _void(rec)
     since = (t - live["on_t"]) if sim["on"] else 0.0
     sim["selftest"] = bool(sim["on"] and since < SELFTEST_S)
     sim["selftest_frac"] = min(since / SELFTEST_S, 0.999)
@@ -412,7 +433,7 @@ def _advance(objects):
     rec["proved"] = rec["proved"] or held_for("flash", flashing) + 1e-9 >= FLASH_S
     gap = bar_gap(det)
     touching = gap <= TOUCH_GAP
-    trusted = bool(rec["proved"] and sim["on"])
+    trusted = bool(rec["proved"] and ready)       # proved since it was last switched on or let go
     rec["bad_touch"] = rec["bad_touch"] or bool(touching and not trusted)
     rec["touched"] = rec["touched"] or held_for("touch", touching and trusted) + 1e-9 >= TOUCH_S
     rec["reproved"] = rec["reproved"] or held_for("flash again", flashing and was_touched) + 1e-9 >= FLASH_S

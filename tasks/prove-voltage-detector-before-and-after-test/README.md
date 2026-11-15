@@ -33,7 +33,8 @@ inspect-robots run --embodiment yam_arena -E task=prove_voltage_detector_before_
 - The scripted demo's plan is 910 steps (45.5 s); it succeeds at step 890 with a good tester and at step 592 with a
   flat one. A trial takes 3 to 6 minutes on a GPU.
 - `--scorer task_score` gives 1.0 on success, otherwise the score at the end (`SCORE_OVER = "end"`).
-- Offline checks: `pytest test_prove_voltage_detector_before_and_after_test.py`.
+- Offline checks: `pytest test_prove_voltage_detector_before_and_after_test.py test_prove_voltage_detector_sequences.py`
+  (the second file steps the scorer through switch-off, restart, let-go and re-proof sequences).
 
 ## Scoring
 
@@ -46,16 +47,17 @@ The scorer reads the two buttons' travel, the detector's pose and, for "laid dow
 | On the plate | The detector's top end face within 3 mm of the tester's end plate, its centre within 25 mm of the plate's centre (across and in height). |
 | TEST held | TEST button down 1.4 mm or more of its 2 mm travel. |
 | Proved | Self-test finished, on the plate, TEST held, tester battery good: the two red lights flash. Counted once this has lasted 1.0 s without a break. |
+| Proof voided | A proof counts only while the detector stays on and in hand. Switching it off (ON pressed again; the PRX's ON/OFF button) or letting it leave both grippers (each gripper's centre point 3 cm or more from the detector's bounding box: laid down, dropped, knocked off) voids every earlier proof and any bar touch not yet followed by a proof. Switched on again, it must finish a new 3 s self-test and be proved again before a bar touch counts. A finished prove, touch, prove stands (switching off after the second proof, as a lineworker does, loses nothing). The tester's battery is set at reset and never changes during a trial. |
 | Touching the bar | Any point of the top end face (7.6 x 5 cm) within 3 mm of the bar's surface. |
 | Laid down | Each gripper's centre point at least 3 cm from the detector's bounding box; the top end and the stick end each move under 2 mm over 1 s; top end at least 8 cm from the bar and at least 1 cm off the plate; held 1 s. |
-| Permanent zero | The top end touches the bar while the detector is not both proved and switched on; or any part of the detector is more than 2 cm below the table top. Nothing done afterwards restores the score. |
+| Permanent zero | The top end touches the bar while the detector has no proof that still counts (before the first proof; while switched off; after a restart, during or after its new self-test, until proved again; after being put down, until proved again; at any time with a flat tester); or any part of the detector is more than 2 cm below the table top. Nothing done afterwards restores the score. |
 
 | Tester battery good (even seeds) | Score |
 |---|---|
 | Self-test finished | 0.1 |
 | Proved | 0.2 |
-| After that, top end touching the bar for 1.0 s without a break, detector on | 0.6 |
-| Proved again after that touch | 0.8 |
+| After that, top end touching the bar for 1.0 s without a break, the proof still counting | 0.6 |
+| Proved again after that touch, with no switch-off or let-go in between | 0.8 |
 | Then laid down at least 8 cm from the bar | 1.0 |
 
 | Tester battery flat (odd seeds) | Score |
@@ -163,5 +165,6 @@ much extra height.
 ## Files and licences
 
 `prove_voltage_detector_before_and_after_test.py` (task), `yam_parts.py`, `yam_joints.py` (our own kit for compound
-parts and passive joints, unmodified), `test_prove_voltage_detector_before_and_after_test.py`, `task.json`. Every
+parts and passive joints, unmodified), `test_prove_voltage_detector_before_and_after_test.py`,
+`test_prove_voltage_detector_sequences.py`, `task.json`. Every
 shape is a primitive authored in the task file. No third-party meshes, textures, fonts or materials are used.
