@@ -104,7 +104,9 @@ side view; measure the laid-down clearances with a ruler.
   tester's metal end plate and holding its TEST button.
 - 2 ft x 1-1/4 in fibreglass universal hot stick with one universal spline head (for example Hastings 567-2).
 - 18 cm of bare 1/0 AWG all-aluminium conductor (ASTM B231, 9.35 mm), two polymer standoff posts, three posts or
-  blocks for the cradle and the tester, a base board. For the flat-battery trials: a discharged 9 V battery.
+  blocks for the cradle and the tester, a base board. For the flat-battery trials: a 9 V battery with one terminal
+  taped over.
+- These instruments cost about $1,300 together at retail. The next section gives a substitute for about $70.
 - Safety of a real trial: nothing is energised; the bar is a loose offcut connected to nothing. Keep people outside
   the arms' reach and use the cell's e-stop; the 72 cm stick sweeps about 15 cm.
 
@@ -113,6 +115,89 @@ and about 5 lb for the 6 ft Hastings universal stick (about 0.5 lb per foot of p
 pole of 126 in is listed at 7 lb. From these: pole 0.40 kg for 61.5 cm, head 0.20 kg, end cap 0.04 kg, total 0.64 kg
 (plausible range 0.52 to 0.76 kg). One retailer lists the 2 ft stick at "3.0" (if pounds, 1.36 kg; probably a
 shipping weight). Weigh the real stick; the balance point moves about 3 cm per 0.1 kg.
+
+## Low-cost substitute for real trials (about $70 instead of about $1,300)
+
+The genuine instruments are specialist stock: retail listings put the PRX-500 at about $800 and the PT-PRX at about
+$440, and a hot stick adds more. A trial needs none of their high-voltage function, because the bar is dead and the
+only "source" is the tester. What a trial needs is the outside shape, the mass and balance, the two buttons and the
+lights' behaviour. The substitute below keeps all of those. It is a design with a bench check; we have not built it.
+The cost is our estimate from hobby-retail prices.
+
+**Parts.** One 5 V hobby microcontroller board (Arduino Nano class); two 10 mm red LEDs; seven 5 mm green LEDs; one
+5 mm green LED and three 5 mm 940 nm infrared LEDs for the tester; one 5 mm infrared phototransistor; two 12 mm
+tactile switches rated 160 to 260 gf; resistors (nine 330 ohm, one 1 k, three 470 ohm, one 10 k); a 3 x AAA holder
+with switch lead; one 9 V battery clip and two 9 V batteries; 3 mm plywood or printed PLA for the two shells; a
+50 x 25 x 1 mm aluminium plate; a 32 mm (1-1/4 in) hardwood dowel or rigid tube, 615 mm; a 40 mm dowel offcut,
+55 mm; 9.5 mm (3/8 in) aluminium rod, 180 mm, in place of the 1/0 conductor; steel washers or fishing weights as
+ballast; red, black, grey and orange paint.
+
+**Detector shell.** A closed box 280 x 76 x 50 mm outside, painted red. Measured from the top (sensing) end along
+the centre line of the face: the two red LEDs at 22 mm, 18 mm either side of the centre line; the seven green LEDs
+from 70 to 130 mm at 10 mm pitch; the ON switch at 176 mm with a 14 mm cap standing 2 mm proud. In the centre of the
+top end face, a 5 mm hole with the phototransistor flush behind it. Board and AAA holder go inside. Add ballast
+until the box weighs 0.31 kg, spread so it balances at its middle.
+
+**Stick.** Glue the 40 x 55 mm dowel offcut (grey) to the box's other end and the 615 mm dowel (orange) to that, all
+on one axis. Add ballast inside or at the far end of the stick until the whole assembly weighs 0.95 kg and balances
+on a ruler's edge 451 mm from the top end. This matters more than the stick's own mass: the grip point and the sag
+in the task come from the total mass and the balance point.
+
+**Tester shell.** A closed box 125 x 66 x 33 mm, painted black, 199 g with its battery (ballast to suit). On one
+66 x 33 mm end, the aluminium plate, centred, with three 5 mm holes across its width at 0 and +/-15 mm and an
+infrared LED flush behind each. On top, on the centre line 40 mm from the plate end, the TEST switch with a 14 mm
+cap 2 mm proud; the green LED 83 mm from the plate end and 18 mm off the centre line. Wiring: battery +, TEST
+switch, then four branches in parallel to battery -: the green LED with 1 k, and each infrared LED with 470 ohm.
+There is no logic in the tester: with a good battery, holding TEST lights the green LED and the three infrared
+LEDs; with no battery current, nothing lights.
+
+**Detector wiring and logic.** ON switch between pin D2 and ground (internal pull-up). Red LEDs on D3 and D4, green
+LEDs on D5 to D11, each through 330 ohm. Phototransistor collector to 5 V, emitter to A0 and through 10 k to
+ground. Sketch:
+
+```
+const int RED[2] = {3, 4}, GRN[7] = {5, 6, 7, 8, 9, 10, 11};
+bool on = false, last = HIGH; unsigned long t0 = 0; int base = 0;
+void setup() { pinMode(2, INPUT_PULLUP);
+  for (int i = 0; i < 2; i++) pinMode(RED[i], OUTPUT);
+  for (int i = 0; i < 7; i++) pinMode(GRN[i], OUTPUT); }
+void all(bool r, int g) {            // g = index of the one lit green light, -1 for none
+  for (int i = 0; i < 2; i++) digitalWrite(RED[i], r);
+  for (int i = 0; i < 7; i++) digitalWrite(GRN[i], i == g); }
+void loop() {
+  bool b = digitalRead(2);
+  if (last == HIGH && b == LOW) {    // each press toggles: off -> self-test -> on, or on -> off
+    on = !on; t0 = millis(); base = analogRead(A0); delay(30); }
+  last = b;
+  if (!on) { all(false, -1); return; }
+  unsigned long t = millis() - t0;
+  if (t < 3000) { all((t / 200) % 2, (t / 150) % 7); return; }      // 3 s self-test
+  bool proof = analogRead(A0) > base + 150;                         // tester's infrared seen
+  all(proof && (millis() / 200) % 2, 0);                            // 2.5 Hz flash, one green = on
+}
+```
+
+The ambient level is read at each switch-on (the detector then lies 2 cm from the tester with TEST not held), so
+room light does not trigger it. One limit follows: a detector switched on while its top end is already on the plate
+with TEST held takes the tester's infrared as ambient and will not flash until it is switched off and on again away
+from the plate. That errs on the safe side (it cannot be proved), and the scripted sequence never does it.
+
+**Bench check before trials.** (1) Weigh both units and check the balance point; measure button forces with a
+kitchen scale (ON about 2 N, TEST about 2.5 N). (2) Press ON: lights sweep for 3 s, then one green stays lit; press
+again: all dark. (3) Good battery: with the detector on, hold its top end flat on the plate and hold TEST: the
+tester's green LED lights and both red lights flash; repeat with the top end's centre 25 mm off the plate's centre in
+each direction; back off 3 cm: the flashing stops. If either fails, change the 150 in the sketch. (4) Flat
+condition: nothing lights on either unit in the same positions.
+
+**Both battery conditions.** Good: a fresh 9 V battery in the tester. Flat: the same make of battery with a strip
+of clear tape over one terminal before it is clipped in (or a battery so discharged that step 4 passes). Close the
+tester before the robot's cameras are uncovered; nothing on the outside shows which battery is fitted, as in the
+simulation.
+
+**What the substitute changes.** A real PRX senses the tester's electric field and flashes a short distance before
+contact; the substitute senses infrared and is set to flash on the plate, which is what the simulation models. It
+has no beeper and no range buttons, as in the simulation. A lab that owns the real pair can use it with no change to
+the task.
 
 Sources: HD Electric PRX and PT-PRX instruction manuals and retailer specification pages (tester.co.uk); Hastings
 567-series listings (Burlington Safety, Mitchell Instrument); Hubbell Chance specification sheet H176010.
@@ -160,7 +245,8 @@ much extra height.
 - Light positions and sizes, the ON and TEST button positions and forces, and the stick mass are estimates (the
   makers publish none of them). The voltage-range buttons, the beeper, auto power-off and a live conductor are not
   modelled. The bar is always dead.
-- The flat battery is set by the seed at reset; in a real trial fit a discharged battery.
+- The flat battery is set by the seed at reset; in a real trial fit a 9 V battery with one terminal taped over (see
+  "Both battery conditions").
 
 ## Files and licences
 
