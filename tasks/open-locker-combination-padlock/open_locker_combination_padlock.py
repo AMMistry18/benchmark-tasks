@@ -173,7 +173,8 @@ SCORE_OVER = "end"
 
 COMBINATION = (24, 8, 31)
 MARK_DEG = 9.0                      # 40 marks
-TOL_DEG = 9.0                       # a gate counts as set within one mark (the fence's clearance in the gate)
+TOL_DEG = 4.5                       # a gate counts as set within half a mark: the number has to be the one on the index
+OPEN_WINDOW_DEG = 4.0               # the fence reaches release depth only with every gate within 4 degrees (see GATE_DEG)
 
 # Lock frame: origin at the body centre, axes = world axes (x into the door, y left, z up); the dial faces -x.
 BODY_W, BODY_T, BODY_H = 48.0, 19.0, 50.0          # mm
@@ -219,10 +220,17 @@ DOOR = Part("locker_door", DOOR_POS, tuple(box(np.asarray(s.center) - [DOOR_X, L
 # ------------------------------------------------------------------ the padlock (free MeshMechanism)
 # Wheel pack along the dial axis (x, mm): drive cam disc -8..-6, its pin -6..-2.6; wheel 2 front pin -5.4..-2,
 # disc -2..0, back pin 0..3.4; wheel 1 front pin 0.6..4, disc 4..6. Pins 2 mm wide at radius 5.5..8.5 mm.
-# Rims radius 12 mm, gate 25 degrees wide and 3 mm deep. The fence sits at +y (angle 0, measured from +y toward +z,
+# Rims radius 12 mm, gates 3 mm deep with radial sides. The fence sits at +y (angle 0, measured from +y toward +z,
 # the right-hand sense about +x). Turning RIGHT (clockwise seen from the robot) is +angle about +x and brings lower
 # numbers to the index at the top: number = (-angle / 9) mod 40.
-RIM_R, HUB_R, GATE_DEG = 12.0, 9.0, 25.0
+# Gate width: the 1.2 mm fence (inner face at 12.8 mm radius when idle) must go 2.6 mm deep, to 10.2 mm radius, before
+# the bolt's nose clears the catch (nose edge at 9.6 mm, catch face at 7.0 mm). A fence corner there sits
+# atan(0.6 / 10.2) = 3.4 degrees off the fence line, so a gate whose sides are OPEN_WINDOW_DEG + 3.4 degrees either side
+# of its centre lets the fence reach release depth only while that gate is within OPEN_WINDOW_DEG of the fence.
+FENCE_HALF_T, FENCE_R_IDLE, RELEASE_DEPTH = 0.6, 12.8, 2.6       # mm
+FENCE_R_RELEASE = FENCE_R_IDLE - RELEASE_DEPTH                     # 10.2 mm
+RIM_R, HUB_R = 12.0, 9.0
+GATE_DEG = 2 * (OPEN_WINDOW_DEG + math.degrees(math.atan(FENCE_HALF_T / FENCE_R_RELEASE)))   # 14.7 degrees
 PIN_R0, PIN_R1, PIN_W = 5.5, 8.5, 2.0
 PIN_DEG = 20.6                                    # pin-centre angle at contact (inner corners, computed below)
 DISCS = {"dial": (-8.0, -6.0), "wheel2": (-2.0, 0.0), "wheel1": (4.0, 6.0)}
@@ -258,10 +266,10 @@ GATE_PSI = {k: (-v) % 360.0 for k, v in SET.items()}   # gate angle in each link
 START_Q = {"dial": 0.0, "wheel2": -(A_PIN + 0.9), "wheel1": -2 * (A_PIN + 0.9)}
 
 
-def _rim_meshes(link, color):
-    x0, x1 = DISCS[link]
+def rim_profiles(link):
+    """The rim's convex (y, z) pieces in mm, in the link's own frame: the whole rim but the gate."""
     g = GATE_PSI[link]
-    meshes = []
+    profiles = []
     span = 360.0 - GATE_DEG
     n = 8
     for k in range(n):
@@ -270,8 +278,13 @@ def _rim_meshes(link, color):
         arc = [(RIM_R * math.cos(math.radians(a)), RIM_R * math.sin(math.radians(a)))
                for a in np.linspace(a0, a1, 7)]
         inner = [(HUB_R * 0.8 * math.cos(math.radians(a)), HUB_R * 0.8 * math.sin(math.radians(a))) for a in (a1, a0)]
-        meshes.append(_prism_mesh(f"{link}_rim{k}", arc + inner, x0, x1, color=color))
-    return meshes
+        profiles.append(arc + inner)
+    return profiles
+
+
+def _rim_meshes(link, color):
+    x0, x1 = DISCS[link]
+    return [_prism_mesh(f"{link}_rim{k}", prof, x0, x1, color=color) for k, prof in enumerate(rim_profiles(link))]
 
 
 def _pin(x0, x1, color=None):
@@ -314,7 +327,7 @@ CATCH = _prism_mesh("catch", ((7, 12), (14, 12), (14, 18), (11, 18), (7, 14)), -
 NOSE = _prism_mesh("nose", ((3, 14), (6.6, 14), (9.6, 17), (9.6, 20), (3, 20)), -3.0, 9.0, color=BRASS)
 CONNECTOR = _prism_mesh("bolt_arm", ((12.8, -0.6), (15.5, -0.6), (15.5, 1.0), (9.6, 20), (3, 20), (3, 14)), 7.0, 9.0,
                         color=BRASS)
-FENCE = box(_c(-0.5, 14.15, 0.0), _c(16.0, 2.7, 1.2), BRASS)               # x -8.5..7.5, y 12.8..15.5
+FENCE = box(_c(-0.5, (FENCE_R_IDLE + 15.5) / 2, 0.0), _c(16.0, 15.5 - FENCE_R_IDLE, 2 * FENCE_HALF_T), BRASS)  # y 12.8..15.5
 
 BOLT_PRELOAD = 4.9            # N, bolt spring at its idle stop
 BOLT_K = 300.0
@@ -357,7 +370,7 @@ OBJECTS = [DOOR, LOCK]
 FELL_DROP = 0.035             # sticky zero: the lock body more than 35 mm below where it hung (off the hasp)
 ON_HASP_XY = 0.012            # on the hasp: the shackle's top bar still through the hole
 SETTLE_M, SETTLE_DEG = 0.005, 5.0   # at rest: body centre within 5 mm and its tilt within 5 deg over the 1 s window
-FORCED_DEG = 18.0             # sticky zero: shackle open while a gate is more than two marks off (forced open)
+FORCED_DEG = 9.0              # sticky zero: shackle open while a gate is more than one mark off (forced open)
 TEST_STICKY = ()
 
 
@@ -422,11 +435,16 @@ _DIAL = _RUN.setdefault("padlock_dial", {"step": None, "deg": None})
 
 def score(objects):
     lock = objects["padlock"]
-    _DIAL.update(step=_RUN["step"], deg=float(lock.angle_deg("dial")))   # for the closed-loop demo grips
+    _DIAL.update(step=_RUN["step"], deg=float(lock.angle_deg("dial")), off=gate_offsets(lock))   # for the demo grips
+    if _RUN.get("padlock_log") and _RUN["t"] is not None and _DIAL.get("logged") != _RUN["step"]:
+        _DIAL["logged"] = _RUN["step"]          # scripted demo only: one line of angles per control step
+        off = _DIAL["off"]
+        print(f"PADLOG {_RUN['step']} {float(_RUN['t']):.2f} dial={_DIAL['deg']:.2f} w1={off['wheel1']:.2f} "
+              f"w2={off['wheel2']:.2f} cam={off['dial']:.2f} shackle={lock.joints['shackle'] * 1000:.2f}", flush=True)
     fell = sticky("lock off the hasp", lock.origin[2] < LOCK_Z - FELL_DROP)
     w1, w2, cam = gates_set(lock)
     opened = shackle_open(lock)
-    # Forced: the shackle comes open while a gate is more than two marks off. Judged as it opens (the first 0.25 s);
+    # Forced: the shackle comes open while a gate is more than one mark off. Judged as it opens (the first 0.25 s);
     # once open, the fence is out of the gates and the dial turns freely, as on the real lock.
     was_open = ever("shackle was open", False)                           # before this step (offline: never)
     just_opened = opened and not was_open
@@ -496,39 +514,55 @@ DEMO_PACE = 1.0
 # (start roll, end roll) per grip: five right grips (864 deg: two turns + to 24), three left grips (576 deg: one turn
 # past 24 + to 8), one right grip (153 deg to 31). Wrist joint 6 spans 240 degrees, so the dial is re-gripped.
 # Each grip turns the dial a few degrees less than the wrist rolls (pad compliance and wrist lag: GPU runs measured
-# 2-17 deg per grip, varying), so the planned grips stop short and the last grip of each number is closed-loop: in
-# 0.1 s steps it rolls on until the dial (read from the simulator, as scripted demos may) reaches the number, never
-# reversing. Targets are the dial angles of the maker's rule: 864 (24 after two turns right), 288 (8 after one turn
-# left past 24), 441 (31, right).
+# 2-17 deg per grip, varying), so the planned grips stop short and the last grip of each number is closed-loop on the
+# angles read from the simulator (as scripted demos may), never reversing: a fast approach in 0.1 s steps that stops
+# LIVE_FAST["creep"] degrees short (the pinched dial creeps on 2-3 deg after the wrist stops), a pause, then a slow
+# trim in 0.25 s steps of at most 0.5 deg onto the number. While a wheel is being carried, the loop steers on that
+# wheel's own gate (so the pins' play is included). Targets are the dial angles of the maker's rule: 864 (24 after two
+# turns right), 288 (8 after one turn left past 24), 441 (31, right).
 DIAL_TARGETS = (864.0, 288.0, 441.0)
+SET_BY = ("wheel1", "wheel2", "dial")                               # the gate each number sets
 PLANNED = ((68.0, 200.0, 4), (292.0, -205.0, 2), (68.0, 0.0, 0))   # (start roll, roll per grip, grips) per number
 LIVE_START = (68.0, 292.0, 68.0)
 LIVE_CAP = 220.0
-LIVE_DT, LIVE_N = 0.1, 60
-LIVE_GAIN, LIVE_MAX, LIVE_TOL = 0.3, 4.0, 0.3
-LIVE_CREEP = 2.0              # stop 2 deg short: the pinched dial creeps on about that much after the wrist stops
+LIVE_FAST = {"dt": 0.1, "n": 70, "gain": 0.3, "max": 4.0, "creep": 4.0, "tol": 0.3}
+LIVE_TRIM = {"dt": 0.25, "n": 14, "gain": 0.5, "max": 0.5, "creep": 0.3, "tol": 0.15}
+UNWIND = 3.0                  # before letting go of numbers 1 and 2 the wrist eases back 3 deg, unloading the pads
+
+
+def _remaining(c):
+    """Degrees still to turn for this number, in the turning direction (negative = past it)."""
+    rem = c["dir"] * (c["target"] - _DIAL["deg"])
+    off = (_DIAL.get("off") or {}).get(c["link"])
+    if c["link"] != "dial" and off is not None and abs(-c["dir"] * off - rem) < 6.0:
+        rem = -c["dir"] * off           # the wheel is being carried: steer on its own gate
+    return rem
 
 
 class LiveRoll(float):
-    """One 0.1 s step of a closed-loop grip: its roll is fixed the first time the plan reaches it, from the
-    previous step's roll and the dial's latest angle. Offline (no simulator) it follows a planned ramp to the cap."""
-    def __new__(cls, chain, idx):
+    """One step of a closed-loop grip: its roll is fixed the first time the plan reaches it, from the previous
+    step's roll and the latest angles. Offline (no simulator) it follows a planned ramp to the cap."""
+    def __new__(cls, chain, idx, phase):
         obj = super().__new__(cls, 0.0)
-        obj.chain, obj.idx = chain, idx
+        obj.chain, obj.idx, obj.phase = chain, idx, phase
         return obj
 
     def roll(self):
-        c = self.chain
+        c, p = self.chain, self.phase
         if self.idx in c["values"]:
             return c["values"][self.idx]
-        planned = c["start"] + c["dir"] * LIVE_CAP * (self.idx + 1) / LIVE_N
+        planned = c["start"] + c["dir"] * LIVE_CAP * min(self.idx + 1, LIVE_FAST["n"]) / LIVE_FAST["n"]
         if _RUN["t"] is None or _DIAL["deg"] is None:
             return planned
         prev = c["values"].get(self.idx - 1, c["start"])
-        err = c["dir"] * (c["target"] - _DIAL["deg"]) - LIVE_CREEP
-        inc = min(LIVE_MAX, LIVE_GAIN * err) if err > LIVE_TOL else 0.0
+        rem = _remaining(c)
+        err = rem - p["creep"]
+        inc = min(p["max"], p["gain"] * err) if err > p["tol"] else 0.0
         value = c["start"] + c["dir"] * min(LIVE_CAP, c["dir"] * (prev - c["start"]) + inc)
         c["values"][self.idx] = value
+        if self.idx == c["last"]:
+            print(f"PADSTOP number={c['number']} dial={_DIAL['deg']:.2f} target={c['target']:.1f} "
+                  f"remaining={rem:.2f} wrist_roll={value:.1f}", flush=True)
         return value
 
     @property
@@ -537,7 +571,7 @@ class LiveRoll(float):
 
 
 class LiveLerp(float):
-    """A wrist-back step after a closed-loop grip: a fraction of the way from that grip's final roll to `target`."""
+    """A wrist step after a closed-loop grip: a fraction of the way from that grip's final roll to `target`."""
     def __new__(cls, end, target, frac):
         obj = super().__new__(cls, 0.0)
         obj.end, obj.target, obj.frac = end, float(target), float(frac)
@@ -552,7 +586,19 @@ class LiveLerp(float):
         return roll_rotation(self.roll())
 
 
+class LiveOffset(LiveLerp):
+    """The final roll of a closed-loop grip plus a fixed offset."""
+    def __new__(cls, end, delta):
+        obj = super().__new__(cls, end, 0.0, 0.0)
+        obj.delta = float(delta)
+        return obj
+
+    def roll(self):
+        return self.end.roll() + self.delta
+
+
 def demo():
+    _RUN["padlock_log"] = True        # the scorer prints the dial and gate angles once per control step for this demo
     G = GripOrientation
     plan = {"left": [], "right": []}
     st = {}
@@ -567,7 +613,7 @@ def demo():
         plan["left"].append(Waypoint(dt * DEMO_PACE, tuple(float(v) for v in LEFT_PARK), FINGER_OPEN, label, 0.0))
 
     def roll_to(target, per60, label):
-        if isinstance(st["rr"], LiveRoll):
+        if isinstance(st["rr"], (LiveRoll, LiveLerp)):
             end = st["rr"]
             for k in range(1, 5):
                 add(per60 * LIVE_CAP / 4 / ROLL_STEP, label, rr=LiveLerp(end, target, k / 4) if k < 4 else float(target))
@@ -600,11 +646,16 @@ def demo():
         roll_to(live0, 0.5, f"grip {k}: wrist back")
         add(0.6, f"grip {k}: pads around the dial", right=TCP_DIAL)
         add(0.6, f"grip {k}: pinch", rf=PINCH)
-        chain = {"start": live0, "dir": 1.0 if side == "right" else -1.0, "target": target, "values": {}}
-        for i in range(LIVE_N):
-            add(LIVE_DT, f"grip {k}: turn {side} to the number", rr=LiveRoll(chain, i))
+        chain = {"start": live0, "dir": 1.0 if side == "right" else -1.0, "target": target, "link": SET_BY[number],
+                 "values": {}, "number": number + 1, "last": LIVE_FAST["n"] + LIVE_TRIM["n"] - 1}
+        for i in range(LIVE_FAST["n"]):
+            add(LIVE_FAST["dt"], f"grip {k}: turn {side} to the number", rr=LiveRoll(chain, i, LIVE_FAST))
+        add(0.6, f"grip {k}: pause")
+        for i in range(LIVE_TRIM["n"]):
+            add(LIVE_TRIM["dt"], f"grip {k}: trim onto the number", rr=LiveRoll(chain, LIVE_FAST["n"] + i, LIVE_TRIM))
         add(0.4, f"grip {k}: settle")
         if number < 2:
+            add(0.4, f"grip {k}: ease the wrist back", rr=LiveOffset(st["rr"], -chain["dir"] * UNWIND))
             regrip(k, "")
     add(1.5, "pull the body down", right=TCP_DIAL - [0, 0, PULL_DOWN])
     add(1.0, "hold the pull")

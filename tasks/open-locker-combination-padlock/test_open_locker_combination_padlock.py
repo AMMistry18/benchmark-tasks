@@ -26,7 +26,7 @@ from dataclasses import replace
 TASK = load(Path(__file__).with_name("open_locker_combination_padlock.py"))
 T = TASK.module
 OBJ = {o.name: o for o in T.OBJECTS}
-RUN_LIMIT_STEPS = 4000
+RUN_LIMIT_STEPS = 5000
 
 
 def _rot(yaw_deg, tilt_deg, axis):
@@ -129,10 +129,36 @@ CASES = [
     }, 0.75, {}),
     ('second number two marks off, third set', START_POSES, {
         'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 441.0, 'wheel2': 645.4, 'wheel1': 905.2, 'shackle': 0.0, 'bolt': 0.0}},
-    }, 0.25, {}),  # Wheel 2's gate is 18 degrees from the fence, beyond the one-mark clearance.
-    ('each gate just inside one mark', START_POSES, {
-        'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 449.0, 'wheel2': 619.4, 'wheel1': 913.2, 'shackle': 0.0, 'bolt': 0.0}},
+    }, 0.25, {}),  # Wheel 2's gate is 18 degrees from the fence, far outside half a mark.
+    ('each gate just inside half a mark', START_POSES, {
+        'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 445.4, 'wheel2': 623.0, 'wheel1': 909.6, 'shackle': 0.0, 'bolt': 0.0}},
     }, 0.75, {}),
+    ('each gate off by half the tolerance', START_POSES, {
+        'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 438.75, 'wheel2': 629.65, 'wheel1': 902.95, 'shackle': 0.0, 'bolt': 0.0}},
+    }, 0.75, {}),
+    ('exact combination, opened, released, at rest', GOAL_POSES, {
+    }, 1.0, {}),
+    ('first number one mark off (25 instead of 24)', START_POSES, {
+        'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 441.0, 'wheel2': 627.4, 'wheel1': 914.2, 'shackle': 0.0, 'bolt': 0.0}},
+    }, 0, {}),  # Wheel 1's gate 9 degrees from the fence: not set, so nothing scores.
+    ('first number one mark off the other way (23)', START_POSES, {
+        'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 441.0, 'wheel2': 627.4, 'wheel1': 896.2, 'shackle': 0.0, 'bolt': 0.0}},
+    }, 0, {}),
+    ('second number one mark off (9 instead of 8)', START_POSES, {
+        'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 441.0, 'wheel2': 618.4, 'wheel1': 905.2, 'shackle': 0.0, 'bolt': 0.0}},
+    }, 0.25, {}),
+    ('second number one mark off the other way (7)', START_POSES, {
+        'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 441.0, 'wheel2': 636.4, 'wheel1': 905.2, 'shackle': 0.0, 'bolt': 0.0}},
+    }, 0.25, {}),
+    ('third number one mark off (30 instead of 31)', START_POSES, {
+        'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 432.0, 'wheel2': 627.4, 'wheel1': 905.2, 'shackle': 0.0, 'bolt': 0.0}},
+    }, 0.5, {}),
+    ('third number one mark off the other way (32)', START_POSES, {
+        'padlock': {'pos': (0.2395, -0.06, 0.8925), 'joints': {'dial': 450.0, 'wheel2': 627.4, 'wheel1': 905.2, 'shackle': 0.0, 'bolt': 0.0}},
+    }, 0.5, {}),
+    ('shackle open with the third number a mark and a half off (forced)', START_POSES, {
+        'padlock': {'pos': (0.2395, -0.06, 0.8805), 'joints': {'dial': 454.5, 'wheel2': 627.4, 'wheel1': 905.2, 'shackle': 0.012, 'bolt': 0.0}},
+    }, 0, {}),  # The fence cannot enter a gate this far off, so an open shackle there means the lock was forced.
     ('opened but the dial still pinched', GOAL_POSES, {
     }, 0.75, {'TEST_GRIPPERS': "{'left': (np.array([0.10, 0.25, TOP + 0.20]), 1.0), 'right': (np.array(TCP_DIAL) - [0, 0, SHACKLE_TRAVEL], 0.35)}"}),
     ('opened, released, but the lock still swinging', GOAL_POSES, {
@@ -181,3 +207,60 @@ def test_the_demo_is_reachable_within_the_joint_limits():
 def test_the_demo_fits_in_the_run_limit():
     longest = max(ArmPlan(w, station.BASES[s]).duration for s, w in TASK.demo().items())
     assert (longest + TASK.success_hold_s) * 20 < RUN_LIMIT_STEPS * 0.6
+
+
+# ------------------------------------------------------------------ the gates' physical clearance
+def _rot2(poly, deg):
+    a = math.radians(deg)
+    c, s = math.cos(a), math.sin(a)
+    return [(y * c - z * s, y * s + z * c) for y, z in poly]
+
+
+def _overlap(p, q):
+    """Separating-axis test for two convex polygons (strict overlap; touching counts as clear)."""
+    for poly in (p, q):
+        for i in range(len(poly)):
+            (y0, z0), (y1, z1) = poly[i], poly[(i + 1) % len(poly)]
+            n = (z1 - z0, y0 - y1)
+            a = [n[0] * y + n[1] * z for y, z in p]
+            b = [n[0] * y + n[1] * z for y, z in q]
+            if max(a) <= min(b) + 1e-9 or max(b) <= min(a) + 1e-9:
+                return False
+    return True
+
+
+def _fence_reaches_release(link, offset_deg):
+    """Can the fence go RELEASE_DEPTH deep (inner face at 10.2 mm radius) with this link's gate offset_deg off it?"""
+    r0 = T.FENCE_R_RELEASE
+    fence = [(r0, -T.FENCE_HALF_T), (15.5, -T.FENCE_HALF_T), (15.5, T.FENCE_HALF_T), (r0, T.FENCE_HALF_T)]
+    q = offset_deg - T.GATE_PSI[link]            # the link angle that puts its gate offset_deg from the fence
+    return not any(_overlap(fence, _rot2(prof, q)) for prof in T.rim_profiles(link))
+
+
+@pytest.mark.parametrize("link", ["wheel1", "wheel2", "dial"])
+def test_the_fence_enters_only_within_the_tolerance(link):
+    for off in (0.0, T.TOL_DEG / 2, -T.TOL_DEG / 2, T.OPEN_WINDOW_DEG - 0.05, -(T.OPEN_WINDOW_DEG - 0.05)):
+        assert _fence_reaches_release(link, off), (link, off)
+    for off in (T.TOL_DEG, -T.TOL_DEG, T.MARK_DEG, -T.MARK_DEG, 2 * T.MARK_DEG, 90.0):
+        assert not _fence_reaches_release(link, off), (link, off)
+    assert T.OPEN_WINDOW_DEG <= T.TOL_DEG <= T.MARK_DEG / 2
+
+
+def test_the_idle_fence_clears_every_rim():
+    fence = [(T.FENCE_R_IDLE, -T.FENCE_HALF_T), (15.5, -T.FENCE_HALF_T), (15.5, T.FENCE_HALF_T),
+             (T.FENCE_R_IDLE, T.FENCE_HALF_T)]
+    for link in ("wheel1", "wheel2", "dial"):
+        for q in range(0, 360, 15):
+            assert not any(_overlap(fence, _rot2(prof, q)) for prof in T.rim_profiles(link))
+
+
+def test_the_carried_wheels_land_on_their_gates_when_the_dial_stops_on_the_number():
+    """Dialled by the rule with the pins touching (pick-up angle A_PIN), each gate lands exactly under the fence, and
+    a dial stop a whole mark away moves the gate a whole mark, outside the tolerance."""
+    a = T.A_PIN
+    w1 = -T.MARK_DEG * 24 + 2 * a          # right to 24, both pin pairs pushing
+    w2 = -T.MARK_DEG * 8 - a               # left to 8, the cam's pin pushing
+    cam = -T.MARK_DEG * 31
+    for link, ang in (("wheel1", w1), ("wheel2", w2), ("dial", cam)):
+        assert abs(T._wrap(T.GATE_PSI[link] + ang)) < 1e-9
+        assert abs(T._wrap(T.GATE_PSI[link] + ang + T.MARK_DEG)) > T.TOL_DEG
