@@ -264,3 +264,43 @@ def test_the_carried_wheels_land_on_their_gates_when_the_dial_stops_on_the_numbe
     for link, ang in (("wheel1", w1), ("wheel2", w2), ("dial", cam)):
         assert abs(T._wrap(T.GATE_PSI[link] + ang)) < 1e-9
         assert abs(T._wrap(T.GATE_PSI[link] + ang + T.MARK_DEG)) > T.TOL_DEG
+
+
+# ------------------------------------------------------------------ the printed dial face
+def _turn(yz, deg):
+    a = math.radians(deg)
+    y, z = yz
+    return (y * math.cos(a) - z * math.sin(a), y * math.sin(a) + z * math.cos(a))
+
+
+@pytest.mark.parametrize(("number", "dial_deg"), [(24, 864.0), (8, 288.0), (31, 441.0), (0, 0.0)])
+def test_the_printed_mark_under_the_index_is_the_dialled_number(number, dial_deg):
+    """At each stop of the maker's rule the printed tick of that number (and no other) is straight up, under the
+    index, and number_at_index() reads the same number."""
+    assert T.number_at_index(dial_deg) == pytest.approx(number)
+    y, z = _turn(T.DIAL_MARKS[number]["tick"], dial_deg)
+    assert abs(y) < 1e-6 and z > 0
+    for other in (number - 1, number + 1):
+        y2, z2 = _turn(T.DIAL_MARKS[other % 40]["tick"], dial_deg)
+        assert abs(math.degrees(math.atan2(-y2, z2))) == pytest.approx(T.MARK_DEG, abs=1e-6)
+
+
+def test_the_numbers_rise_clockwise_seen_from_the_robot():
+    """Seen from the robot (screen right = -y), 10 is at three o'clock, 20 at the bottom and 30 at nine o'clock,
+    and turning right (+ about x) brings lower numbers to the index."""
+    y, z = T.DIAL_MARKS[10]["label"]
+    assert -y > 10 and abs(z) < 1e-6
+    y, z = T.DIAL_MARKS[20]["label"]
+    assert z < -10
+    y, z = T.DIAL_MARKS[30]["label"]
+    assert y > 10
+    assert T.number_at_index(T.MARK_DEG) == pytest.approx(39)
+
+
+def test_the_print_sits_on_the_disc_clear_of_the_knob_and_the_pads():
+    pts = np.asarray(T.PRINT_FACE.points) / T.MM
+    r = np.hypot(pts[:, 1], pts[:, 2])
+    assert r.max() < T.DISC_R and r.min() > T.KNOB_R
+    assert pts[:, 0].min() >= T.FACE_X - T.PRINT_T - 1e-9          # 0.15 mm proud at most
+    pad_tip_x = (T.TCP_DIAL[0] + T.PAD_TIP - T.LOCK_X) / T.MM
+    assert pad_tip_x < T.FACE_X - 1.0                                # the pinching pads stay over 1 mm off the print

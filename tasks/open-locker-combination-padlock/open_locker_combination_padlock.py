@@ -1,7 +1,7 @@
 """A combination padlock hanging on a locker's hasp. The lock-area section of a single-tier steel locker door stands
-upright on the table, facing the robot; a 3 mm steel hasp tab sticks out of it. A real-size dial padlock (48 mm
-wide body, 33 mm dial standing 7 mm proud, 7 mm shackle, 163 g; 40 marks, 0-39) hangs free on the tab with its dial
-facing the robot. Inside it is a working three-gate wheel pack (two free wheels driven through pins by the dial's
+upright on the table, facing the robot; a 3 mm steel hasp tab sticks out of it. A real-size dial padlock of the Master Lock
+No. 1500 type (round 48 mm body, 37 mm black dial printed with 40 marks and the numerals 0-35 under a red index, 18 mm
+knurled knob, 7 mm arched shackle, 163 g) hangs free on the tab with its dial facing the robot. Inside it is a working three-gate wheel pack (two free wheels driven through pins by the dial's
 drive cam, the cam carrying the third gate) and a spring-loaded shackle held by a ramped catch whose bolt can only
 move when all three gates sit under its fence. The robot must dial the given combination by the maker's rule (right
 past two full turns to the first number, left one full turn past it to the second, right to the third) and pull the
@@ -176,22 +176,30 @@ MARK_DEG = 9.0                      # 40 marks
 TOL_DEG = 4.5                       # a gate counts as set within half a mark: the number has to be the one on the index
 OPEN_WINDOW_DEG = 4.0               # the fence reaches release depth only with every gate within 4 degrees (see GATE_DEG)
 
-# Lock frame: origin at the body centre, axes = world axes (x into the door, y left, z up); the dial faces -x.
-BODY_W, BODY_T, BODY_H = 48.0, 19.0, 50.0          # mm
-DIAL_R, DIAL_PROUD = 16.5, 7.0                     # 33 mm dial, 7 mm proud of the body face
+# Lock frame: origin on the dial axis at the body's mid-thickness, axes = world axes (x into the door, y left, z up);
+# the dial faces -x. The maker's photos show a round 48 mm body with the dial set about 3 mm below the body's centre.
+BODY_R, BODY_T, BODY_CZ = 24.0, 19.0, 3.0          # mm: 48 mm round body, 19 mm thick, centre 3 mm above the dial axis
+BODY_W, BODY_H = 2 * BODY_R, 2 * BODY_R
+BODY_TOP = BODY_CZ + BODY_R                        # 27 mm above the dial axis
+DISC_R, DISC_PROUD = 18.5, 1.0                     # 37 mm black numbered dial disc, 1 mm proud of the body face
+KNOB_R, KNOB_H, CAP_R, CAP_H = 9.0, 6.0, 7.5, 1.0  # 18 mm knurled knob on the disc, capped 1 mm
+DIAL_PROUD = DISC_PROUD + KNOB_H + CAP_H           # 8 mm from the body face to the knob's front
+DIAL_R = KNOB_R                                    # the knob is what a hand (or the gripper) turns
 SHACKLE_R, SHACKLE_HALF_SPAN = 3.5, 14.0           # 7 mm rod; leg centres 28 mm apart (21 mm inside width)
-SHACKLE_CLEAR = 19.0                               # inside vertical clearance
-BAR_Z = BODY_H / 2 + SHACKLE_CLEAR + SHACKLE_R     # top bar centre, 47.5 mm above the body centre
-SHORT_LEG_IN = 7.0                                 # short leg engaged 7 mm into the body
+SHACKLE_CLEAR = 19.0                               # inside vertical clearance, from the body's top to the arch
+INSIDE_TOP = BODY_TOP + SHACKLE_CLEAR              # 46 mm: the arch's inside top
+ARCH_ZC = INSIDE_TOP - (SHACKLE_HALF_SPAN - SHACKLE_R)   # centre of the semicircular arch (centre-line radius 14)
+BAR_Z = INSIDE_TOP + SHACKLE_R                     # the arch's top centre-line point, 49.5 mm above the dial axis
+SHORT_LEG_END = 18.0                               # short leg's end (with its catch), 4.5 mm inside the body's curve
 SHACKLE_TRAVEL = 0.012                             # shackle springs up 12 mm when unlocked
-OPEN_Q = 0.008                                     # open: shackle up 8 mm (short leg end 1 mm above the body)
+OPEN_Q = 0.008                                     # open: shackle up 8 mm (short leg end out of the body)
 
 LOCK_X, LOCK_Y = 0.2395, -0.060
 LOCK_Z = TOP + 0.145
 LOCK_POS = (LOCK_X, LOCK_Y, LOCK_Z)
 BODY_FACE_X = LOCK_X - BODY_T / 2 * MM             # 0.230
 DOOR_X = LOCK_X + 0.015                            # hasp hole centre 15 mm out from the door face
-HOLE_BOTTOM = LOCK_Z + (BAR_Z - SHACKLE_R) * MM    # the shackle's inside top rests on the hole's bottom
+HOLE_BOTTOM = LOCK_Z + INSIDE_TOP * MM             # the shackle's inside top rests on the hole's bottom
 HOLE = 0.010                                       # 10 mm hole
 TAB_T = 0.003
 TAB_OUT = 0.025
@@ -298,14 +306,30 @@ BRASS = (0.70, 0.55, 0.25)
 WHITE = (0.95, 0.95, 0.95)
 _c = lambda x, y, z: (x * MM, y * MM, z * MM)
 
-BODY_SHAPES = (
-    box(_c(0, 0, 0), _c(BODY_T, BODY_W, BODY_H), STEEL),
-    box(_c(-BODY_T / 2 - 0.4, 0, DIAL_R + 2.5), _c(0.8, 1.5, 4.0), WHITE),     # index mark above the dial
+RED = (0.80, 0.08, 0.06)
+CHROME = (0.62, 0.63, 0.66)
+FACE_X = -BODY_T / 2 - DISC_PROUD                  # the numbered disc's face, mm (lock frame)
+KNOB_FRONT_X = FACE_X - KNOB_H - CAP_H
+def _round_mesh(name, r, cz, x0, x1, color, sides):
+    """A smooth round disc (convex prism, `sides` facets) on an axis along x through (y 0, z cz), x0..x1 in mm; its
+    cylinder primitive is the offline proxy. Primitive cylinders render with only ten facets."""
+    prof = [(r * math.cos(a), cz + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, sides, endpoint=False)]
+    return _prism_mesh(name, prof, x0, x1, color=color,
+                       proxy=(cyl(_c((x0 + x1) / 2, 0, cz), r * MM, (x1 - x0) * MM, axis="x", color=color),))
+
+
+BODY_MESH = _round_mesh("body", BODY_R, BODY_CZ, -BODY_T / 2, BODY_T / 2, STEEL, 72)   # round stainless-covered body
+DIAL_MESHES = (
+    _round_mesh("disc", DISC_R, 0.0, FACE_X, -BODY_T / 2, BLACK, 64),                      # numbered disc
+    _round_mesh("cap", CAP_R, 0.0, KNOB_FRONT_X, KNOB_FRONT_X + CAP_H, BLACK, 40),         # its black cap
 )
-DIAL_X = -BODY_T / 2 - DIAL_PROUD / 2                                      # knob centre, mm
+BODY_SHAPES = (
+    box(_c(0, 0, -15.0), _c(4.0, 4.0, 4.0), STEEL),     # the body's inner frame below the wheel pack (out of sight)
+)
 DIAL_SHAPES = (
-    cyl(_c(DIAL_X, 0, 0), DIAL_R * MM, DIAL_PROUD * MM, axis="x", color=BLACK),
-    box(_c(-BODY_T / 2 - DIAL_PROUD - 0.3, 0, DIAL_R - 2.5), _c(0.6, 1.2, 4.0), WHITE),   # the zero mark
+    cyl(_c(FACE_X - KNOB_H / 2, 0, 0), KNOB_R * MM, KNOB_H * MM, axis="x", color=CHROME),   # knurled knob (the pads
+    #     pinch a true cylinder; a faceted mesh knob made the pinch slip on a GPU run)
+    box(_c(KNOB_FRONT_X - 0.2, 0, CAP_R - 1.6), _c(0.4, 1.0, 2.4), WHITE),     # the knob's zero mark
     cyl(_c(-7.0, 0, 0), HUB_R * MM, 2.0 * MM, axis="x", color=BRASS),       # drive-cam hub
     _pin(-6.0, -2.6, BRASS),
 )
@@ -313,14 +337,165 @@ WHEEL2_SHAPES = (cyl(_c(-1.0, 0, 0), HUB_R * MM, 2.0 * MM, axis="x", color=BRASS
                  _pin(0.0, 3.4, BRASS))
 WHEEL1_SHAPES = (cyl(_c(5.0, 0, 0), HUB_R * MM, 2.0 * MM, axis="x", color=BRASS), _pin(0.6, 4.0, BRASS))
 
-_long_leg_z0, _short_leg_z0 = 9.0, BODY_H / 2 - SHORT_LEG_IN
+# Shackle: two straight legs and a semicircular arch (centre-line radius 14 mm), as on the real lock.
+_long_leg_z0, _short_leg_z0 = 9.0, SHORT_LEG_END
 SHACKLE_SHAPES = (
-    cyl(_c(0, 0, BAR_Z), SHACKLE_R * MM, 2 * SHACKLE_HALF_SPAN * MM, axis="y", color=STEEL),
-    cyl(_c(0, -SHACKLE_HALF_SPAN, (_long_leg_z0 + BAR_Z) / 2), SHACKLE_R * MM, (BAR_Z - _long_leg_z0) * MM,
+    cyl(_c(0, -SHACKLE_HALF_SPAN, (_long_leg_z0 + ARCH_ZC) / 2), SHACKLE_R * MM, (ARCH_ZC - _long_leg_z0) * MM,
         axis="z", color=STEEL),
-    cyl(_c(0, SHACKLE_HALF_SPAN, (_short_leg_z0 + BAR_Z) / 2), SHACKLE_R * MM, (BAR_Z - _short_leg_z0) * MM,
+    cyl(_c(0, SHACKLE_HALF_SPAN, (_short_leg_z0 + ARCH_ZC) / 2), SHACKLE_R * MM, (ARCH_ZC - _short_leg_z0) * MM,
         axis="z", color=STEEL),
 )
+
+
+def _closed_mesh(name, shells, color, proxy=(), collision="convex"):
+    """One mesh from several closed shells, each given as (bottom ring, top ring) of equal length; every shell is
+    oriented outward on its own. Points in mm, lock frame."""
+    pts, faces = [], []
+    for lo, hi in shells:
+        lo, hi = np.asarray(lo, float), np.asarray(hi, float)
+        n, base = len(lo), len(pts)
+        f = []
+        for i in range(n):
+            j = (i + 1) % n
+            f += [(i, j, n + j), (i, n + j, n + i)]
+        for k in range(1, n - 1):
+            f += [(0, k + 1, k), (n, n + k, n + k + 1)]
+        f = np.array(f, int)
+        p = np.vstack([lo, hi])
+        tri = p[f]
+        if np.einsum('ij,ij->i', tri[:, 0] - p.mean(0), np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])).sum() < 0:
+            f = f[:, ::-1]
+        pts += list(p)
+        faces += list(f + base)
+    return Mesh(name, np.array(pts) * MM, np.array(faces, int), collision=collision, color=color, proxy=proxy)
+
+
+def _arch_shells(segments=11, sides=12):
+    # An odd count puts a 16-degree facet at the arch's top: it rests on the hasp hole's bottom as a short flat (3 mm),
+    # so a released lock rocks to rest instead of rolling on a frictionless circle.
+    shells = []
+    ring = lambda phi: [(SHACKLE_R * math.cos(b),
+                         SHACKLE_HALF_SPAN * math.cos(phi) + SHACKLE_R * math.sin(b) * math.cos(phi),
+                         ARCH_ZC + SHACKLE_HALF_SPAN * math.sin(phi) + SHACKLE_R * math.sin(b) * math.sin(phi))
+                        for b in np.linspace(0, 2 * math.pi, sides, endpoint=False)]
+    for k in range(segments):
+        shells.append((ring(math.pi * k / segments), ring(math.pi * (k + 1) / segments)))
+    return shells
+
+
+ARCH = [_closed_mesh(f"shackle_arch{k}", [s], STEEL,
+                     proxy=(box(_c(0, 0, ARCH_ZC + (SHACKLE_HALF_SPAN + SHACKLE_R) / 2),
+                                _c(2 * SHACKLE_R, 2 * (SHACKLE_HALF_SPAN + SHACKLE_R), SHACKLE_HALF_SPAN + SHACKLE_R)),)
+                     if k == 0 else ())
+        for k, s in enumerate(_arch_shells())]
+
+# ------------------------------------------------------------------ the printed dial face (Master Lock No. 1500 layout)
+# Seen from the robot the numbers run clockwise: 0 at the top, 10 at three o'clock, 20 at the bottom, 30 at nine
+# o'clock. A tick at every number (longer at every fifth), white numerals 0, 5 ... 35 standing on the radius with their
+# tops toward the rim (20 reads upside down), and a red index on the body above the dial. Marks are 0.15 mm thick
+# white print on the black disc; they are drawn only (no collision) and lie inside the disc, clear of the knob.
+PRINT_T = 0.15
+TICK_R0_LONG, TICK_R0, TICK_R1, TICK_W = 15.0, 16.3, 18.1, 0.7
+NUM_R, NUM_H, NUM_STROKE = 12.6, 3.6, 0.75         # numeral centre radius, height and stroke (mm)
+_GLYPHS = {   # stroke font in a unit-height box, x from 0 to 0.62
+    "0": [[(0.31, 1), (0.53, 0.92), (0.62, 0.68), (0.62, 0.32), (0.53, 0.08), (0.31, 0), (0.09, 0.08), (0, 0.32),
+           (0, 0.68), (0.09, 0.92), (0.31, 1)]],
+    "1": [[(0.12, 0.78), (0.36, 1), (0.36, 0)]],
+    "2": [[(0.02, 0.8), (0.14, 0.96), (0.31, 1), (0.5, 0.95), (0.6, 0.78), (0.56, 0.6), (0, 0), (0.62, 0)]],
+    "3": [[(0.02, 0.9), (0.2, 1), (0.45, 1), (0.6, 0.86), (0.58, 0.66), (0.42, 0.54), (0.22, 0.54)],
+          [(0.42, 0.54), (0.6, 0.42), (0.62, 0.18), (0.48, 0.02), (0.22, 0), (0.0, 0.1)]],
+    "5": [[(0.58, 1), (0.08, 1), (0.04, 0.56), (0.32, 0.62), (0.54, 0.54), (0.62, 0.3), (0.52, 0.06), (0.3, 0),
+           (0.0, 0.1)]],
+}
+
+
+def _screen_to_lock(sx, sy):
+    """Robot's view of the dial face (screen right, screen up) in mm -> lock-frame (y, z)."""
+    return -sx, sy
+
+
+def _strip_shell(p, q, width, x_face):
+    """A flat print stroke from p to q (screen mm), square-capped, lying on the face at x_face."""
+    p, q = np.asarray(p, float), np.asarray(q, float)
+    d = q - p
+    d = d / max(np.linalg.norm(d), 1e-9)
+    nrm = np.array([-d[1], d[0]]) * width / 2
+    a, b = p - d * width / 2, q + d * width / 2
+    quad = [a - nrm, b - nrm, b + nrm, a + nrm]
+    lo = [(x_face + 0.05, *_screen_to_lock(*c)) for c in quad]
+    hi = [(x_face - PRINT_T, *_screen_to_lock(*c)) for c in quad]
+    return lo, hi
+
+
+def dial_marks():
+    """Shells of the printed face (lock frame at dial angle 0) plus, per number, where its tick and label sit."""
+    shells, where = [], {}
+    for n in range(40):
+        th = math.radians(MARK_DEG * n)                    # clockwise from the top, seen from the robot
+        u = np.array([math.sin(th), math.cos(th)])         # outward, screen coordinates
+        r0 = TICK_R0_LONG if n % 5 == 0 else TICK_R0
+        shells.append(_strip_shell(u * r0, u * TICK_R1, TICK_W, FACE_X))
+        where[n] = {"tick": tuple(_screen_to_lock(*(u * (r0 + TICK_R1) / 2)))}
+        if n % 5:
+            continue
+        right = np.array([math.cos(th), -math.sin(th)])    # the numeral's own "right", tops toward the rim
+        text = str(n)
+        w = 0.62 * NUM_H
+        gap = 0.18 * NUM_H
+        total = len(text) * w + (len(text) - 1) * gap
+        centre = u * NUM_R
+        for i, ch in enumerate(text):
+            x0 = -total / 2 + i * (w + gap)
+            for line in _GLYPHS[ch]:
+                pts = [centre + right * (x0 + gx * NUM_H) + u * (gy - 0.5) * NUM_H for gx, gy in line]
+                for a, b in zip(pts[:-1], pts[1:]):
+                    shells.append(_strip_shell(a, b, NUM_STROKE, FACE_X))
+        where[n]["label"] = tuple(_screen_to_lock(*centre))
+    return shells, where
+
+
+_FACE_SHELLS, DIAL_MARKS = dial_marks()
+PRINT_FACE = _closed_mesh("print_face", _FACE_SHELLS, WHITE)
+_ix = -BODY_T / 2
+PRINT_INDEX = _closed_mesh("print_index", [(
+    [(_ix + 0.05, *_screen_to_lock(*c)) for c in ((0.0, DISC_R + 0.6), (1.3, DISC_R + 3.0), (-1.3, DISC_R + 3.0))],
+    [(_ix - PRINT_T, *_screen_to_lock(*c)) for c in ((0.0, DISC_R + 0.6), (1.3, DISC_R + 3.0), (-1.3, DISC_R + 3.0))])],
+    RED)
+
+
+def number_at_index(dial_deg):
+    """The dial reading under the index for a dial joint angle (degrees): numbers rise clockwise, turning right is +."""
+    return (-dial_deg / MARK_DEG) % 40.0
+
+
+# Print is drawn only: the task gives its "print_" meshes (and the black painted disc and cap) a matte paint look and
+# switches the print's collision off when the simulator authors them (the kit files are untouched; a failure here leaves 0.15 mm print that nothing reaches).
+_PAINTED = ("disc", "cap")          # the black painted dial and knob cap: matte, not polished metal
+_ym = sys.modules[MeshMechanism.__module__]
+_kit_author_mesh = getattr(_ym._author_mesh, "_padlock_original", _ym._author_mesh)
+
+
+def _author_mesh(stage, parent, mesh, anchor, color, contact_offset):
+    _kit_author_mesh(stage, parent, mesh, anchor, color, contact_offset)
+    if not (mesh.name.startswith("print_") or mesh.name in _PAINTED):
+        return
+    try:
+        import isaaclab.sim as sim_utils
+        from pxr import UsdPhysics
+        from yam_arena.station import linear_rgb
+        path = f"{parent}/mesh_{mesh.name}"
+        prim = stage.GetPrimAtPath(path)
+        if mesh.name.startswith("print_"):
+            UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr().Set(False)
+        look = sim_utils.PreviewSurfaceCfg(diffuse_color=linear_rgb(mesh.color), roughness=0.55, metallic=0.0)
+        look.func(f"{path}_paint", look)
+        sim_utils.bind_visual_material(path, f"{path}_paint", stage=stage)
+    except Exception as exc:  # pragma: no cover - simulator only
+        print(f"padlock: print look not applied to {mesh.name}: {exc}", flush=True)
+
+
+_author_mesh._padlock_original = _kit_author_mesh
+_ym._author_mesh = _author_mesh
 # Ramped catch at the short leg's end (45 degrees) and the bolt's nose that sits on it; the bolt's fence (+y side
 # of the wheel pack) can move in only when all three gates are under it.
 CATCH = _prism_mesh("catch", ((7, 12), (14, 12), (14, 18), (11, 18), (7, 14)), -3.5, 3.5, color=STEEL)
@@ -360,8 +535,9 @@ LOCK = MeshMechanism(
                 armature=1e-4),
           mass=0.003, color=BRASS, friction=(0.1, 0.1))],
     mass=0.112, color=STEEL, friction=(0.3, 0.25), contact_offset=0.0005, self_collide=True, grip=None,
-    meshes={"dial": tuple(_rim_meshes("dial", BRASS)), "wheel2": tuple(_rim_meshes("wheel2", BRASS)),
-            "wheel1": tuple(_rim_meshes("wheel1", BRASS)), "shackle": (CATCH,), "bolt": (NOSE, CONNECTOR)})
+    meshes={"base": (BODY_MESH, PRINT_INDEX), "dial": DIAL_MESHES + tuple(_rim_meshes("dial", BRASS)) + (PRINT_FACE,),
+            "wheel2": tuple(_rim_meshes("wheel2", BRASS)), "wheel1": tuple(_rim_meshes("wheel1", BRASS)),
+            "shackle": (CATCH, *ARCH), "bolt": (NOSE, CONNECTOR)})
 LOCK_MASS = 0.163
 PRESSED_PARTS = ("padlock",)
 OBJECTS = [DOOR, LOCK]
@@ -503,11 +679,11 @@ def roll_rotation(roll_deg):
 
 
 PAD_TIP = 0.013                                    # pad tips 13 mm past the TCP
-TCP_DIAL = np.array([BODY_FACE_X - 0.0015 - PAD_TIP, LOCK_Y, LOCK_Z - 0.002])   # pads 1.5 mm off the body face
+TCP_DIAL = np.array([BODY_FACE_X - (DISC_PROUD + 1.5) * MM - PAD_TIP, LOCK_Y, LOCK_Z - 0.002])   # pads 1.5 mm off the disc
 BACK_OFF = 0.008
 PULL_DOWN = 0.024
-PINCH = -(2 * DIAL_R * MM - 0.008) / 2             # 4 mm past contact per pad
-OPEN_W = -0.025                                    # 50 mm opening around the dial
+PINCH = -(2 * KNOB_R * MM - 0.008) / 2             # 4 mm past contact per pad on the 18 mm knob
+OPEN_W = -0.018                                    # 36 mm opening around the knob (fingers stay over the disc)
 LEFT_PARK = np.array([0.12, 0.25, TOP + 0.17])
 ROLL_STEP = 60.0
 DEMO_PACE = 1.0
@@ -527,7 +703,8 @@ LIVE_START = (68.0, 292.0, 68.0)
 LIVE_CAP = 220.0
 LIVE_FAST = {"dt": 0.1, "n": 70, "gain": 0.3, "max": 4.0, "creep": 4.0, "tol": 0.3}
 LIVE_TRIM = {"dt": 0.25, "n": 14, "gain": 0.5, "max": 0.5, "creep": 0.3, "tol": 0.15}
-UNWIND = 3.0                  # before letting go of numbers 1 and 2 the wrist eases back 3 deg, unloading the pads
+UNWIND = 8.0                  # before letting go of numbers 1 and 2 the wrist eases back 8 deg, so the pads opening
+                              # cannot flick the dial (and the wheels it carries) past the number
 
 
 def _remaining(c):
